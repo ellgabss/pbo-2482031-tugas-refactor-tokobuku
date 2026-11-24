@@ -1,66 +1,61 @@
 import java.util.ArrayList;
 
+// ISP: Produk hanya berisi hal yang berlaku untuk SEMUA buku
 interface Produk {
     String getJudul();
     String getPenulis();
     int getHarga();
-    int getBeratGram();      // hanya masuk akal untuk buku cetak
-    String linkUnduh();      // hanya masuk akal untuk buku digital & audio
-    int getDurasiMenit();    // hanya masuk akal untuk buku audio
+    int hargaAkhir();
+    String keterangan();
 }
 
-// OCP: harga akhir dan keterangan dihitung oleh tiap jenis buku sendiri
-abstract class Buku implements Produk {
-    final String jenis;      // masih dipakai sementara (dihapus di tahap LSP + ISP)
-    final String judul;
-    final String penulis;
-    final int harga;
+// ISP: role interface, hanya dimiliki buku yang bisa dikirim
+interface BisaDikirim {
+    int getBeratGram();
+}
 
-    Buku(String jenis, String judul, String penulis, int harga) {
-        this.jenis = jenis;
+// ISP: role interface, hanya dimiliki buku yang bisa diunduh
+interface BisaDiunduh {
+    String linkUnduh();
+}
+
+// LSP: tidak ada lagi method yang melempar UnsupportedOperationException
+abstract class Buku implements Produk {
+    protected final String judul;
+    protected final String penulis;
+    protected final int harga;
+
+    Buku(String judul, String penulis, int harga) {
         this.judul = judul;
         this.penulis = penulis;
         this.harga = harga;
     }
 
+    @Override
     public String getJudul() {
         return judul;
     }
 
+    @Override
     public String getPenulis() {
         return penulis;
     }
 
+    @Override
     public int getHarga() {
         return harga;
     }
 
-    public int getBeratGram() {
-        throw new UnsupportedOperationException(judul + " tidak punya berat");
-    }
-
-    public String linkUnduh() {
-        throw new UnsupportedOperationException(judul + " tidak bisa diunduh");
-    }
-
-    public int getDurasiMenit() {
-        throw new UnsupportedOperationException(judul + " bukan buku audio");
-    }
-
-    String slug() {
+    protected String slug() {
         return judul.toLowerCase().replace(' ', '-');
     }
-
-    public abstract int hargaAkhir();
-
-    public abstract String keterangan();
 }
 
-class BukuCetak extends Buku {
+class BukuCetak extends Buku implements BisaDikirim {
     private final int beratGram;
 
     BukuCetak(String judul, String penulis, int harga, int beratGram) {
-        super("CETAK", judul, penulis, harga);
+        super(judul, penulis, harga);
         this.beratGram = beratGram;
     }
 
@@ -85,11 +80,11 @@ class BukuCetak extends Buku {
     }
 }
 
-class BukuDigital extends Buku {
+class BukuDigital extends Buku implements BisaDiunduh {
     private final double ukuranMB;
 
     BukuDigital(String judul, String penulis, int harga, double ukuranMB) {
-        super("DIGITAL", judul, penulis, harga);
+        super(judul, penulis, harga);
         this.ukuranMB = ukuranMB;
     }
 
@@ -109,22 +104,17 @@ class BukuDigital extends Buku {
     }
 }
 
-class BukuAudio extends Buku {
+class BukuAudio extends Buku implements BisaDiunduh {
     private final int durasiMenit;
 
     BukuAudio(String judul, String penulis, int harga, int durasiMenit) {
-        super("AUDIO", judul, penulis, harga);
+        super(judul, penulis, harga);
         this.durasiMenit = durasiMenit;
     }
 
     @Override
     public String linkUnduh() {
         return "https://toko.buku/audio/" + slug();
-    }
-
-    @Override
-    public int getDurasiMenit() {
-        return durasiMenit;
     }
 
     @Override
@@ -138,7 +128,6 @@ class BukuAudio extends Buku {
     }
 }
 
-// OCP: metode bayar baru cukup ditambah sebagai class baru
 interface MetodeBayar {
     String nama();
     int totalBayar(int totalBelanja);
@@ -198,19 +187,45 @@ class Rupiah {
     }
 }
 
+// Keranjang memisahkan buku menurut kemampuannya, tanpa instanceof
 class Keranjang {
-    private final ArrayList<Buku> isi = new ArrayList<>();
+    private final ArrayList<Produk> isi = new ArrayList<>();
+    private final ArrayList<BisaDikirim> dikirim = new ArrayList<>();
+    private final ArrayList<BisaDiunduh> diunduh = new ArrayList<>();
 
-    void tambah(Buku buku) {
+    void tambah(BukuCetak buku) {
         isi.add(buku);
+        dikirim.add(buku);
     }
 
-    ArrayList<Buku> getIsi() {
+    void tambah(BukuDigital buku) {
+        isi.add(buku);
+        diunduh.add(buku);
+    }
+
+    void tambah(BukuAudio buku) {
+        isi.add(buku);
+        diunduh.add(buku);
+    }
+
+    ArrayList<Produk> getIsi() {
         return isi;
+    }
+
+    ArrayList<BisaDiunduh> getDiunduh() {
+        return diunduh;
     }
 
     int jumlah() {
         return isi.size();
+    }
+
+    int totalBerat() {
+        int total = 0;
+        for (BisaDikirim d : dikirim) {
+            total += d.getBeratGram();
+        }
+        return total;
     }
 }
 
@@ -218,30 +233,22 @@ class StrukPrinter {
     void cetak(String pelanggan, Keranjang keranjang, MetodeBayar metode, int total, int bayar) {
         System.out.println("================ STRUK =================");
         System.out.println("Pelanggan : " + pelanggan);
-        for (Buku b : keranjang.getIsi()) {
-            System.out.println(b.getJudul() + " (" + b.getPenulis() + ")");
-            System.out.println("  Harga       : " + Rupiah.format(b.getHarga()));
-            System.out.println("  Keterangan  : " + b.keterangan());
-            System.out.println("  Harga akhir : " + Rupiah.format(b.hargaAkhir()));
+        for (Produk p : keranjang.getIsi()) {
+            System.out.println(p.getJudul() + " (" + p.getPenulis() + ")");
+            System.out.println("  Harga       : " + Rupiah.format(p.getHarga()));
+            System.out.println("  Keterangan  : " + p.keterangan());
+            System.out.println("  Harga akhir : " + Rupiah.format(p.hargaAkhir()));
         }
         System.out.println("-----------------------------------------");
         System.out.println("Total belanja : " + Rupiah.format(total));
         System.out.println("Metode bayar  : " + metode.nama());
         System.out.println("Total bayar   : " + Rupiah.format(bayar));
 
-        int totalBerat = 0;
-        for (Buku b : keranjang.getIsi()) {
-            if (b.jenis.equals("CETAK")) {
-                totalBerat += b.getBeratGram();
-            }
-        }
-        System.out.println("Berat kiriman : " + totalBerat + " gram");
+        System.out.println("Berat kiriman : " + keranjang.totalBerat() + " gram");
 
         System.out.println("-------------- LINK UNDUH ---------------");
-        for (Buku b : keranjang.getIsi()) {
-            if (!b.jenis.equals("CETAK")) {
-                System.out.println(b.linkUnduh());
-            }
+        for (BisaDiunduh d : keranjang.getDiunduh()) {
+            System.out.println(d.linkUnduh());
         }
         System.out.println("-----------------------------------------");
     }
@@ -254,8 +261,8 @@ class ProsesCheckout {
 
     void proses(Keranjang keranjang, String pelanggan, String alamatEmail, MetodeBayar metode) {
         int total = 0;
-        for (Buku b : keranjang.getIsi()) {
-            total += b.hargaAkhir();
+        for (Produk p : keranjang.getIsi()) {
+            total += p.hargaAkhir();
         }
         int bayar = metode.totalBayar(total);
 
