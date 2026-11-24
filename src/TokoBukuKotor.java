@@ -9,24 +9,18 @@ interface Produk {
     int getDurasiMenit();    // hanya masuk akal untuk buku audio
 }
 
-class Buku implements Produk {
-    String jenis;            // "CETAK", "DIGITAL", atau "AUDIO"
-    String judul;
-    String penulis;
-    int harga;
-    int beratGram;
-    double ukuranMB;
-    int durasiMenit;
+// OCP: harga akhir dan keterangan dihitung oleh tiap jenis buku sendiri
+abstract class Buku implements Produk {
+    final String jenis;      // masih dipakai sementara (dihapus di tahap LSP + ISP)
+    final String judul;
+    final String penulis;
+    final int harga;
 
-    Buku(String jenis, String judul, String penulis, int harga,
-         int beratGram, double ukuranMB, int durasiMenit) {
+    Buku(String jenis, String judul, String penulis, int harga) {
         this.jenis = jenis;
         this.judul = judul;
         this.penulis = penulis;
         this.harga = harga;
-        this.beratGram = beratGram;
-        this.ukuranMB = ukuranMB;
-        this.durasiMenit = durasiMenit;
     }
 
     public String getJudul() {
@@ -42,27 +36,147 @@ class Buku implements Produk {
     }
 
     public int getBeratGram() {
-        if (!jenis.equals("CETAK")) {
-            throw new UnsupportedOperationException(judul + " tidak punya berat");
-        }
-        return beratGram;
+        throw new UnsupportedOperationException(judul + " tidak punya berat");
     }
 
     public String linkUnduh() {
-        String slug = judul.toLowerCase().replace(' ', '-');
-        if (jenis.equals("DIGITAL")) {
-            return "https://toko.buku/ebook/" + slug;
-        } else if (jenis.equals("AUDIO")) {
-            return "https://toko.buku/audio/" + slug;
-        }
         throw new UnsupportedOperationException(judul + " tidak bisa diunduh");
     }
 
     public int getDurasiMenit() {
-        if (!jenis.equals("AUDIO")) {
-            throw new UnsupportedOperationException(judul + " bukan buku audio");
-        }
+        throw new UnsupportedOperationException(judul + " bukan buku audio");
+    }
+
+    String slug() {
+        return judul.toLowerCase().replace(' ', '-');
+    }
+
+    public abstract int hargaAkhir();
+
+    public abstract String keterangan();
+}
+
+class BukuCetak extends Buku {
+    private final int beratGram;
+
+    BukuCetak(String judul, String penulis, int harga, int beratGram) {
+        super("CETAK", judul, penulis, harga);
+        this.beratGram = beratGram;
+    }
+
+    @Override
+    public int getBeratGram() {
+        return beratGram;
+    }
+
+    private int hitungOngkir() {
+        int kelipatan = (beratGram + 499) / 500;
+        return kelipatan * 5000;
+    }
+
+    @Override
+    public int hargaAkhir() {
+        return harga + hitungOngkir();
+    }
+
+    @Override
+    public String keterangan() {
+        return beratGram + " gram, ongkir " + Rupiah.format(hitungOngkir());
+    }
+}
+
+class BukuDigital extends Buku {
+    private final double ukuranMB;
+
+    BukuDigital(String judul, String penulis, int harga, double ukuranMB) {
+        super("DIGITAL", judul, penulis, harga);
+        this.ukuranMB = ukuranMB;
+    }
+
+    @Override
+    public String linkUnduh() {
+        return "https://toko.buku/ebook/" + slug();
+    }
+
+    @Override
+    public int hargaAkhir() {
+        return harga * 80 / 100;
+    }
+
+    @Override
+    public String keterangan() {
+        return ukuranMB + " MB, diskon 20%";
+    }
+}
+
+class BukuAudio extends Buku {
+    private final int durasiMenit;
+
+    BukuAudio(String judul, String penulis, int harga, int durasiMenit) {
+        super("AUDIO", judul, penulis, harga);
+        this.durasiMenit = durasiMenit;
+    }
+
+    @Override
+    public String linkUnduh() {
+        return "https://toko.buku/audio/" + slug();
+    }
+
+    @Override
+    public int getDurasiMenit() {
         return durasiMenit;
+    }
+
+    @Override
+    public int hargaAkhir() {
+        return harga * 90 / 100;
+    }
+
+    @Override
+    public String keterangan() {
+        return durasiMenit + " menit, diskon 10%";
+    }
+}
+
+// OCP: metode bayar baru cukup ditambah sebagai class baru
+interface MetodeBayar {
+    String nama();
+    int totalBayar(int totalBelanja);
+}
+
+class Tunai implements MetodeBayar {
+    @Override
+    public String nama() {
+        return "Tunai";
+    }
+
+    @Override
+    public int totalBayar(int totalBelanja) {
+        return totalBelanja;
+    }
+}
+
+class Transfer implements MetodeBayar {
+    @Override
+    public String nama() {
+        return "Transfer (+Rp2.500)";
+    }
+
+    @Override
+    public int totalBayar(int totalBelanja) {
+        return totalBelanja + 2500;
+    }
+}
+
+class EWallet implements MetodeBayar {
+    @Override
+    public String nama() {
+        return "E-Wallet (diskon 2%)";
+    }
+
+    @Override
+    public int totalBayar(int totalBelanja) {
+        return totalBelanja * 98 / 100;
     }
 }
 
@@ -78,14 +192,12 @@ class FileRiwayat {
     }
 }
 
-// SRP: tugas memformat angka rupiah dipisah sendiri
 class Rupiah {
     static String format(int angka) {
         return String.format("Rp%,d", angka).replace(',', '.');
     }
 }
 
-// SRP: hanya menyimpan isi keranjang
 class Keranjang {
     private final ArrayList<Buku> isi = new ArrayList<>();
 
@@ -102,82 +214,19 @@ class Keranjang {
     }
 }
 
-// SRP: hanya menghitung harga dan total bayar
-class PerhitunganHarga {
-    int hitungOngkir(Buku b) {
-        int kelipatan = (b.getBeratGram() + 499) / 500;
-        return kelipatan * 5000;
-    }
-
-    int hargaAkhir(Buku b) {
-        switch (b.jenis) {
-            case "CETAK":
-                return b.getHarga() + hitungOngkir(b);
-            case "DIGITAL":
-                return b.getHarga() * 80 / 100;
-            case "AUDIO":
-                return b.getHarga() * 90 / 100;
-            default:
-                return b.getHarga();
-        }
-    }
-
-    int totalBayar(String metode, int totalBelanja) {
-        if (metode.equals("TUNAI")) {
-            return totalBelanja;
-        } else if (metode.equals("TRANSFER")) {
-            return totalBelanja + 2500;
-        } else if (metode.equals("EWALLET")) {
-            return totalBelanja * 98 / 100;
-        }
-        return totalBelanja;
-    }
-}
-
-// SRP: hanya mencetak struk ke layar
 class StrukPrinter {
-    private final PerhitunganHarga harga;
-
-    StrukPrinter(PerhitunganHarga harga) {
-        this.harga = harga;
-    }
-
-    String keterangan(Buku b) {
-        switch (b.jenis) {
-            case "CETAK":
-                return b.getBeratGram() + " gram, ongkir " + Rupiah.format(harga.hitungOngkir(b));
-            case "DIGITAL":
-                return b.ukuranMB + " MB, diskon 20%";
-            case "AUDIO":
-                return b.getDurasiMenit() + " menit, diskon 10%";
-            default:
-                return "-";
-        }
-    }
-
-    String namaMetode(String metode) {
-        if (metode.equals("TUNAI")) {
-            return "Tunai";
-        } else if (metode.equals("TRANSFER")) {
-            return "Transfer (+Rp2.500)";
-        } else if (metode.equals("EWALLET")) {
-            return "E-Wallet (diskon 2%)";
-        }
-        return "?";
-    }
-
-    void cetak(String pelanggan, Keranjang keranjang, String metode, int total, int bayar) {
+    void cetak(String pelanggan, Keranjang keranjang, MetodeBayar metode, int total, int bayar) {
         System.out.println("================ STRUK =================");
         System.out.println("Pelanggan : " + pelanggan);
         for (Buku b : keranjang.getIsi()) {
             System.out.println(b.getJudul() + " (" + b.getPenulis() + ")");
             System.out.println("  Harga       : " + Rupiah.format(b.getHarga()));
-            System.out.println("  Keterangan  : " + keterangan(b));
-            System.out.println("  Harga akhir : " + Rupiah.format(harga.hargaAkhir(b)));
+            System.out.println("  Keterangan  : " + b.keterangan());
+            System.out.println("  Harga akhir : " + Rupiah.format(b.hargaAkhir()));
         }
         System.out.println("-----------------------------------------");
         System.out.println("Total belanja : " + Rupiah.format(total));
-        System.out.println("Metode bayar  : " + namaMetode(metode));
+        System.out.println("Metode bayar  : " + metode.nama());
         System.out.println("Total bayar   : " + Rupiah.format(bayar));
 
         int totalBerat = 0;
@@ -198,19 +247,17 @@ class StrukPrinter {
     }
 }
 
-// SRP: hanya mengatur urutan proses checkout
 class ProsesCheckout {
-    private final PerhitunganHarga harga = new PerhitunganHarga();
-    private final StrukPrinter printer = new StrukPrinter(harga);
+    private final StrukPrinter printer = new StrukPrinter();
     private final EmailSender email = new EmailSender();
     private final FileRiwayat riwayat = new FileRiwayat();
 
-    void proses(Keranjang keranjang, String pelanggan, String alamatEmail, String metode) {
+    void proses(Keranjang keranjang, String pelanggan, String alamatEmail, MetodeBayar metode) {
         int total = 0;
         for (Buku b : keranjang.getIsi()) {
-            total += harga.hargaAkhir(b);
+            total += b.hargaAkhir();
         }
-        int bayar = harga.totalBayar(metode, total);
+        int bayar = metode.totalBayar(total);
 
         printer.cetak(pelanggan, keranjang, metode, total, bayar);
 
@@ -222,12 +269,12 @@ class ProsesCheckout {
 public class TokoBukuKotor {
     public static void main(String[] args) {
         Keranjang keranjang = new Keranjang();
-        keranjang.tambah(new Buku("CETAK", "Pemrograman Java", "John Doe", 120000, 750, 0, 0));
-        keranjang.tambah(new Buku("CETAK", "Algoritma Dasar", "Jane Smith", 95000, 400, 0, 0));
-        keranjang.tambah(new Buku("DIGITAL", "Belajar OOP", "Ani Wijaya", 80000, 0, 12.5, 0));
-        keranjang.tambah(new Buku("AUDIO", "Kisah Programmer", "Budi Santoso", 60000, 0, 0, 240));
+        keranjang.tambah(new BukuCetak("Pemrograman Java", "John Doe", 120000, 750));
+        keranjang.tambah(new BukuCetak("Algoritma Dasar", "Jane Smith", 95000, 400));
+        keranjang.tambah(new BukuDigital("Belajar OOP", "Ani Wijaya", 80000, 12.5));
+        keranjang.tambah(new BukuAudio("Kisah Programmer", "Budi Santoso", 60000, 240));
 
         ProsesCheckout checkout = new ProsesCheckout();
-        checkout.proses(keranjang, "Sari", "sari@mail.com", "EWALLET");
+        checkout.proses(keranjang, "Sari", "sari@mail.com", new EWallet());
     }
 }
