@@ -169,15 +169,26 @@ class EWallet implements MetodeBayar {
     }
 }
 
-class EmailSender {
-    void kirim(String alamat, String isi) {
-        System.out.println("[EMAIL " + alamat + "] " + isi);
+// DIP: abstraksi untuk penyimpan riwayat dan pengirim notifikasi
+interface PenyimpanRiwayat {
+    void simpan(String baris);
+}
+
+interface Notifikasi {
+    void kirim(String tujuan, String isi);
+}
+
+class FileRiwayat implements PenyimpanRiwayat {
+    @Override
+    public void simpan(String baris) {
+        System.out.println("[FILE riwayat.txt] " + baris);
     }
 }
 
-class FileRiwayat {
-    void simpan(String baris) {
-        System.out.println("[FILE riwayat.txt] " + baris);
+class EmailNotifikasi implements Notifikasi {
+    @Override
+    public void kirim(String tujuan, String isi) {
+        System.out.println("[EMAIL " + tujuan + "] " + isi);
     }
 }
 
@@ -254,10 +265,17 @@ class StrukPrinter {
     }
 }
 
+// DIP: semua dependensi masuk lewat constructor, tidak ada "new" di sini
 class ProsesCheckout {
-    private final StrukPrinter printer = new StrukPrinter();
-    private final EmailSender email = new EmailSender();
-    private final FileRiwayat riwayat = new FileRiwayat();
+    private final StrukPrinter printer;
+    private final PenyimpanRiwayat riwayat;
+    private final Notifikasi notifikasi;
+
+    ProsesCheckout(StrukPrinter printer, PenyimpanRiwayat riwayat, Notifikasi notifikasi) {
+        this.printer = printer;
+        this.riwayat = riwayat;
+        this.notifikasi = notifikasi;
+    }
 
     void proses(Keranjang keranjang, String pelanggan, String alamatEmail, MetodeBayar metode) {
         int total = 0;
@@ -269,7 +287,7 @@ class ProsesCheckout {
         printer.cetak(pelanggan, keranjang, metode, total, bayar);
 
         riwayat.simpan(pelanggan + ";" + keranjang.jumlah() + " buku;" + Rupiah.format(bayar));
-        email.kirim(alamatEmail, "Terima kasih " + pelanggan + ", total bayar " + Rupiah.format(bayar));
+        notifikasi.kirim(alamatEmail, "Terima kasih " + pelanggan + ", total bayar " + Rupiah.format(bayar));
     }
 }
 
@@ -281,7 +299,13 @@ public class TokoBukuKotor {
         keranjang.tambah(new BukuDigital("Belajar OOP", "Ani Wijaya", 80000, 12.5));
         keranjang.tambah(new BukuAudio("Kisah Programmer", "Budi Santoso", 60000, 240));
 
-        ProsesCheckout checkout = new ProsesCheckout();
-        checkout.proses(keranjang, "Sari", "sari@mail.com", new EWallet());
+        // DIP: main adalah satu-satunya tempat yang menyusun (new) object-object ini
+        StrukPrinter printer = new StrukPrinter();
+        PenyimpanRiwayat riwayat = new FileRiwayat();
+        Notifikasi notifikasi = new EmailNotifikasi();
+        ProsesCheckout checkout = new ProsesCheckout(printer, riwayat, notifikasi);
+
+        MetodeBayar metode = new EWallet();
+        checkout.proses(keranjang, "Sari", "sari@mail.com", metode);
     }
 }
