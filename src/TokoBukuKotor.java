@@ -1,11 +1,5 @@
 import java.util.ArrayList;
 
-// =====================================================================
-// TokoBukuKotor.java — program ini BERJALAN BENAR, tapi desainnya buruk.
-// Tugas Anda: refactor sampai memenuhi SOLID, dengan keluaran yang
-// SAMA PERSIS seperti sebelum di-refactor.
-// =====================================================================
-
 interface Produk {
     String getJudul();
     String getPenulis();
@@ -84,15 +78,32 @@ class FileRiwayat {
     }
 }
 
-class Toko {
-    ArrayList<Buku> keranjang = new ArrayList<>();
-    EmailSender email = new EmailSender();
-    FileRiwayat riwayat = new FileRiwayat();
+// SRP: tugas memformat angka rupiah dipisah sendiri
+class Rupiah {
+    static String format(int angka) {
+        return String.format("Rp%,d", angka).replace(',', '.');
+    }
+}
+
+// SRP: hanya menyimpan isi keranjang
+class Keranjang {
+    private final ArrayList<Buku> isi = new ArrayList<>();
 
     void tambah(Buku buku) {
-        keranjang.add(buku);
+        isi.add(buku);
     }
 
+    ArrayList<Buku> getIsi() {
+        return isi;
+    }
+
+    int jumlah() {
+        return isi.size();
+    }
+}
+
+// SRP: hanya menghitung harga dan total bayar
+class PerhitunganHarga {
     int hitungOngkir(Buku b) {
         int kelipatan = (b.getBeratGram() + 499) / 500;
         return kelipatan * 5000;
@@ -111,10 +122,30 @@ class Toko {
         }
     }
 
+    int totalBayar(String metode, int totalBelanja) {
+        if (metode.equals("TUNAI")) {
+            return totalBelanja;
+        } else if (metode.equals("TRANSFER")) {
+            return totalBelanja + 2500;
+        } else if (metode.equals("EWALLET")) {
+            return totalBelanja * 98 / 100;
+        }
+        return totalBelanja;
+    }
+}
+
+// SRP: hanya mencetak struk ke layar
+class StrukPrinter {
+    private final PerhitunganHarga harga;
+
+    StrukPrinter(PerhitunganHarga harga) {
+        this.harga = harga;
+    }
+
     String keterangan(Buku b) {
         switch (b.jenis) {
             case "CETAK":
-                return b.getBeratGram() + " gram, ongkir " + formatRupiah(hitungOngkir(b));
+                return b.getBeratGram() + " gram, ongkir " + Rupiah.format(harga.hitungOngkir(b));
             case "DIGITAL":
                 return b.ukuranMB + " MB, diskon 20%";
             case "AUDIO":
@@ -135,36 +166,22 @@ class Toko {
         return "?";
     }
 
-    int totalBayar(String metode, int totalBelanja) {
-        if (metode.equals("TUNAI")) {
-            return totalBelanja;
-        } else if (metode.equals("TRANSFER")) {
-            return totalBelanja + 2500;
-        } else if (metode.equals("EWALLET")) {
-            return totalBelanja * 98 / 100;
-        }
-        return totalBelanja;
-    }
-
-    void checkout(String pelanggan, String alamatEmail, String metode) {
+    void cetak(String pelanggan, Keranjang keranjang, String metode, int total, int bayar) {
         System.out.println("================ STRUK =================");
         System.out.println("Pelanggan : " + pelanggan);
-        int total = 0;
-        for (Buku b : keranjang) {
+        for (Buku b : keranjang.getIsi()) {
             System.out.println(b.getJudul() + " (" + b.getPenulis() + ")");
-            System.out.println("  Harga       : " + formatRupiah(b.getHarga()));
+            System.out.println("  Harga       : " + Rupiah.format(b.getHarga()));
             System.out.println("  Keterangan  : " + keterangan(b));
-            System.out.println("  Harga akhir : " + formatRupiah(hargaAkhir(b)));
-            total += hargaAkhir(b);
+            System.out.println("  Harga akhir : " + Rupiah.format(harga.hargaAkhir(b)));
         }
-        int bayar = totalBayar(metode, total);
         System.out.println("-----------------------------------------");
-        System.out.println("Total belanja : " + formatRupiah(total));
+        System.out.println("Total belanja : " + Rupiah.format(total));
         System.out.println("Metode bayar  : " + namaMetode(metode));
-        System.out.println("Total bayar   : " + formatRupiah(bayar));
+        System.out.println("Total bayar   : " + Rupiah.format(bayar));
 
         int totalBerat = 0;
-        for (Buku b : keranjang) {
+        for (Buku b : keranjang.getIsi()) {
             if (b.jenis.equals("CETAK")) {
                 totalBerat += b.getBeratGram();
             }
@@ -172,29 +189,45 @@ class Toko {
         System.out.println("Berat kiriman : " + totalBerat + " gram");
 
         System.out.println("-------------- LINK UNDUH ---------------");
-        for (Buku b : keranjang) {
+        for (Buku b : keranjang.getIsi()) {
             if (!b.jenis.equals("CETAK")) {
                 System.out.println(b.linkUnduh());
             }
         }
         System.out.println("-----------------------------------------");
-
-        riwayat.simpan(pelanggan + ";" + keranjang.size() + " buku;" + formatRupiah(bayar));
-        email.kirim(alamatEmail, "Terima kasih " + pelanggan + ", total bayar " + formatRupiah(bayar));
     }
+}
 
-    String formatRupiah(int angka) {
-        return String.format("Rp%,d", angka).replace(',', '.');
+// SRP: hanya mengatur urutan proses checkout
+class ProsesCheckout {
+    private final PerhitunganHarga harga = new PerhitunganHarga();
+    private final StrukPrinter printer = new StrukPrinter(harga);
+    private final EmailSender email = new EmailSender();
+    private final FileRiwayat riwayat = new FileRiwayat();
+
+    void proses(Keranjang keranjang, String pelanggan, String alamatEmail, String metode) {
+        int total = 0;
+        for (Buku b : keranjang.getIsi()) {
+            total += harga.hargaAkhir(b);
+        }
+        int bayar = harga.totalBayar(metode, total);
+
+        printer.cetak(pelanggan, keranjang, metode, total, bayar);
+
+        riwayat.simpan(pelanggan + ";" + keranjang.jumlah() + " buku;" + Rupiah.format(bayar));
+        email.kirim(alamatEmail, "Terima kasih " + pelanggan + ", total bayar " + Rupiah.format(bayar));
     }
 }
 
 public class TokoBukuKotor {
     public static void main(String[] args) {
-        Toko toko = new Toko();
-        toko.tambah(new Buku("CETAK", "Pemrograman Java", "John Doe", 120000, 750, 0, 0));
-        toko.tambah(new Buku("CETAK", "Algoritma Dasar", "Jane Smith", 95000, 400, 0, 0));
-        toko.tambah(new Buku("DIGITAL", "Belajar OOP", "Ani Wijaya", 80000, 0, 12.5, 0));
-        toko.tambah(new Buku("AUDIO", "Kisah Programmer", "Budi Santoso", 60000, 0, 0, 240));
-        toko.checkout("Sari", "sari@mail.com", "EWALLET");
+        Keranjang keranjang = new Keranjang();
+        keranjang.tambah(new Buku("CETAK", "Pemrograman Java", "John Doe", 120000, 750, 0, 0));
+        keranjang.tambah(new Buku("CETAK", "Algoritma Dasar", "Jane Smith", 95000, 400, 0, 0));
+        keranjang.tambah(new Buku("DIGITAL", "Belajar OOP", "Ani Wijaya", 80000, 0, 12.5, 0));
+        keranjang.tambah(new Buku("AUDIO", "Kisah Programmer", "Budi Santoso", 60000, 0, 0, 240));
+
+        ProsesCheckout checkout = new ProsesCheckout();
+        checkout.proses(keranjang, "Sari", "sari@mail.com", "EWALLET");
     }
 }
